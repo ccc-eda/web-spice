@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Web SPICE 電路模擬器</title>
+<style>
+:root{--bg:#f3f1ea;--fg:#1d2420;--mut:#5c675f;--card:#fbfaf6;--bd:#cfd3c8;--ac:#1f6f4a;--acfg:#fff;--err:#b3261e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121815;--fg:#dfe8e1;--mut:#92a097;--card:#1a221e;--bd:#2f3b34;--ac:#4fd18b;--acfg:#08150e;--err:#ff8a80}}
+:root[data-theme="dark"]{--bg:#121815;--fg:#dfe8e1;--mut:#92a097;--card:#1a221e;--bd:#2f3b34;--ac:#4fd18b;--acfg:#08150e;--err:#ff8a80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "Noto Sans TC",system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:22px clamp(16px,4vw,40px) 6px}
+h1{margin:0;font:700 28px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:-.02em}
+header p{margin:4px 0 0;color:var(--mut)}
+main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;padding:14px clamp(16px,4vw,40px) 32px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+section{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px}
+.row{display:flex;gap:8px}
+select,button,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:6px}
+select{flex:1;min-width:0;padding:8px}
+button{padding:8px 16px;background:var(--ac);color:var(--acfg);border-color:var(--ac);font-weight:700;cursor:pointer}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+#desc{color:var(--mut);margin:10px 0}
+textarea{width:100%;height:340px;padding:10px;font:13px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;resize:vertical;tab-size:2}
+details{margin-top:10px;color:var(--mut);font-size:13px}
+summary{cursor:pointer;color:var(--fg)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace}
+h2{margin:0 0 10px;font-size:17px}
+#err{color:var(--err);font-weight:700;white-space:pre-wrap}
+#sch{overflow-x:auto;border:1px solid var(--bd);border-radius:6px;padding:6px 8px;background:var(--bg)}
+#schnote{margin:6px 0 14px;font-size:12px;color:var(--mut)}
+#sch:empty,#sch:empty+#schnote{display:none}
+svg text{fill:currentColor;stroke:var(--bg);stroke-width:4px;paint-order:stroke;font:12px ui-monospace,Menlo,Consolas,monospace}
+canvas{width:100%;height:300px;display:block;border-radius:6px;margin-bottom:10px}
+canvas[hidden]{display:none}
+table{border-collapse:collapse;font:14px ui-monospace,Menlo,Consolas,monospace}
+th,td{padding:5px 18px 5px 0;text-align:left;border-bottom:1px solid var(--bd)}
+</style></head><body>
+<header><h1>Web SPICE</h1><p>瀏覽器內執行的電路模擬器，網表即輸入，不需伺服器。</p></header>
+<main>
+<section>
+  <div class="row"><select id="ex" aria-label="範例電路"></select><button id="run">執行模擬</button></div>
+  <p id="desc"></p>
+  <textarea id="src" spellcheck="false" aria-label="SPICE 網表"></textarea>
+  <details><summary>語法說明</summary>
+    <p>第一行為標題。元件：<code>R C L</code>（名稱 節點1 節點2 值）、<code>V I</code>（支援 <code>DC</code>、<code>AC</code>、<code>SIN(偏移 振幅 頻率 [延遲])</code>、<code>PULSE(V1 V2 延遲 上升 下降 脈寬 週期)</code>）、<code>D 陽極 陰極 模型</code>、<code>E 輸出+ 輸出- 控制+ 控制- 增益</code>（VCVS）。節點 <code>0</code> 為接地。</p>
+    <p>指令：<code>.model 名稱 D(IS=… N=…)</code>、<code>.op</code>、<code>.dc 來源 起 止 步</code>、<code>.tran 步長 終點</code>、<code>.ac dec 每十倍頻點數 起 止</code>、<code>.plot v(節點) i(元件)</code>。數值後綴：<code>f p n u m k meg g t</code>。Ctrl+Enter 可快速執行。</p>
+  </details>
+</section>
+<section><h2 id="title"></h2><div id="sch"></div><p id="schnote">電路圖：每條垂直線是一個節點（最左為接地），元件橫跨在它所連的兩個節點之間。</p><div id="err" role="alert"></div><div id="op"></div><canvas id="c1" role="img" aria-label="模擬波形"></canvas><canvas id="c2" role="img" aria-label="相位圖" hidden></canvas></section>
+</main>
+<script>(()=>{var Z={t:1e12,g:1e9,k:1e3,m:.001,u:1e-6,n:1e-9,p:1e-12,f:1e-15};function C(t){let o=/^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)([a-z]*)/i.exec(t||"");if(!o)throw Error("\u7121\u6CD5\u89E3\u6790\u6578\u503C\uFF1A"+t);let i=o[2].toLowerCase();return parseFloat(o[1])*(i.startsWith("meg")?1e6:Z[i[0]]||1)}function F(t){let o=t.split(/\r?\n/),i=(o.shift()||"").trim(),r=[];for(let e of o)e=e.replace(/;.*$/,"").trim(),!(!e||e[0]==="*")&&(e[0]==="+"&&r.length?r[r.length-1]+=" "+e.slice(1):r.push(e));let n={title:i,els:[],models:{},nodes:{0:0},names:["0"],an:null,plot:null},c=e=>(e==="gnd"&&(e="0"),e in n.nodes||(n.nodes[e]=n.names.length,n.names.push(e)),n.nodes[e]);for(let e of r){let s=e.toLowerCase().replace(/[(),=]/g," ").trim().split(/\s+/),x=s[0];if(x===".end")break;if(x[0]==="."){if(x===".model"){let h={};for(let l=3;l+1<s.length;l+=2)h[s[l]]=C(s[l+1]);n.models[s[1]]={type:s[2],p:h}}else if(x===".op")n.an={type:"op"};else if(x===".dc")n.an={type:"dc",src:s[1],a:C(s[2]),b:C(s[3]),s:C(s[4])};else if(x===".tran")n.an={type:"tran",step:C(s[1]),stop:C(s[2])};else if(x===".ac")n.an={type:"ac",n:C(s[2]),f1:C(s[3]),f2:C(s[4])};else if(x===".plot"||x===".print"){n.plot=[];for(let h=1;h<s.length;h++)(s[h]==="v"||s[h]==="i")&&n.plot.push(s[h]+"("+s[++h]+")")}continue}let a=x[0],m={type:a,name:x,n:[c(s[1]),c(s[2])]};if(!"rclvied".includes(a))throw Error("\u4E0D\u652F\u63F4\u7684\u5143\u4EF6\uFF1A"+s[0]);if("rcl".includes(a))m.val=C(s[3]);else if(a==="e")m.n.push(c(s[3]),c(s[4])),m.val=C(s[5]);else if(a==="d")m.model=s[3]||"d";else{let h=m.src={dc:0,ac:0};for(let l=3;l<s.length;){let d=s[l];if(d==="dc"||d==="ac")h[d]=C(s[l+1]),l+=2;else if(d==="sin"||d==="pulse"){let f=[];for(l++;l<s.length&&/^[+-]?[\d.]/.test(s[l])&&f.length<(d==="sin"?4:7);)f.push(C(s[l++]));h[d]=f}else h.dc=C(d),l++}}n.els.push(m)}n.N=n.names.length-1;let u=0;for(let e of n.els)"vle".includes(e.type)&&(e.bi=n.N+u++);return n.nb=u,n.nl=n.els.some(e=>e.type==="d"),n}function G(t,o){if(o===void 0)return t.sin?t.sin[0]:t.pulse?t.pulse[0]:t.dc;if(t.sin){let[i,r,n,c=0]=t.sin;return o<c?i:i+r*Math.sin(2*Math.PI*n*(o-c))}if(t.pulse){let[i,r,n=0,c=1e-9,u=1e-9,e=1e9,s=1e9]=t.pulse;if(o<n)return i;let x=(o-n)%s;return x<c?i+(r-i)*x/c:(x-=c,x<e?r:(x-=e,x<u?r+(i-r)*x/u:i))}return t.dc}function J(t,o){let i=o.length;for(let n=0;n<i;n++){let c=n;for(let u=n+1;u<i;u++)Math.abs(t[u][n])>Math.abs(t[c][n])&&(c=u);if(Math.abs(t[c][n])<1e-18)throw Error("\u77E9\u9663\u5947\u7570\uFF1A\u8ACB\u6AA2\u67E5\u96FB\u58D3\u6E90\u8FF4\u8DEF\u6216\u6D6E\u63A5\u7BC0\u9EDE");[t[n],t[c]]=[t[c],t[n]],[o[n],o[c]]=[o[c],o[n]];for(let u=n+1;u<i;u++){let e=t[u][n]/t[n][n];if(e){for(let s=n;s<i;s++)t[u][s]-=e*t[n][s];o[u]-=e*o[n]}}}let r=new Array(i);for(let n=i-1;n>=0;n--){let c=o[n];for(let u=n+1;u<i;u++)c-=t[n][u]*r[u];r[n]=c/t[n][n]}return r}function Y(t,o){var w,R;let{N:i,nb:r}=t,n=i+r,c=o.mode==="ac",u=o.mode==="tran",e=c?2*n:n,s=Array.from({length:e},()=>new Float64Array(e)),x=new Float64Array(e),a=(p,$,g,k=0)=>{p<0||$<0||(s[p][$]+=g,c&&(s[p+n][$+n]+=g,s[p][$+n]-=k,s[p+n][$]+=k))},m=(p,$)=>{p>=0&&(x[p]+=$)},h=c?o.xop:o.x,l=p=>p<0?0:h[p],d=p=>p<0?0:o.xp[p],f=(p,$,g,k=0)=>{a(p,p,g,k),a($,$,g,k),a(p,$,-g,-k),a($,p,-g,-k)},M=p=>c?p.src.ac:o.sweep&&o.sweep.name===p.name?o.sweep.val:G(p.src,o.t);for(let p=0;p<i;p++)a(p,p,1e-12);for(let p of t.els){let $=p.n[0]-1,g=p.n[1]-1,k=p.bi,v=()=>{a($,k,1),a(g,k,-1),a(k,$,1),a(k,g,-1)};switch(p.type){case"r":f($,g,1/p.val);break;case"c":if(u){let y=p.val/o.h,E=y*(d($)-d(g));f($,g,y),m($,E),m(g,-E)}else c&&f($,g,0,o.w*p.val);break;case"l":if(v(),u){let y=p.val/o.h;a(k,k,-y),m(k,-y*d(k))}else c&&a(k,k,0,-o.w*p.val);break;case"v":v(),m(k,M(p));break;case"i":{let y=M(p);m($,-y),m(g,y);break}case"e":v(),a(k,p.n[2]-1,-p.val),a(k,p.n[3]-1,p.val);break;case"d":{let y=(t.models[p.model]||{}).p||{},E=(w=y.is)!=null?w:1e-14,T=.025852*((R=y.n)!=null?R:1),L=l($)-l(g);L>.95&&(L=.95);let S=Math.exp(L/T),Q=E*(S-1),N=E*S/T+1e-12;if(f($,g,N),!c){let z=Q-N*L;m($,-z),m(g,z)}}}}return{A:s,b:x}}function V(t,o){let i=t.N+t.nb,r=o.x0||new Array(i).fill(0);for(let n=0;n<200;n++){let{A:c,b:u}=Y(t,{...o,x:r}),e=J(c,Array.from(u));if(o.mode==="ac"||!t.nl)return e;let s=!0;for(let a=0;a<i;a++)if(Math.abs(e[a]-r[a])>1e-9+1e-6*Math.abs(e[a])){s=!1;break}if(s)return e;let x=n<25?1:n<60?.5:.2;r=r.map((a,m)=>a+x*(e[m]-a))}throw Error("\u725B\u9813\u8FED\u4EE3\u672A\u6536\u6582")}function _(t){return(t.plot||t.names.slice(1).map(i=>"v("+i+")")).map(i=>{let r=/^(v|i)\((.+)\)$/.exec(i),n;if(r[1]==="v"){if(!(r[2]in t.nodes))throw Error("\u627E\u4E0D\u5230\u7BC0\u9EDE\uFF1A"+r[2]);n=[[t.nodes[r[2]]-1,1]]}else{let c=t.els.find(u=>u.name===r[2]);if(!c)throw Error("\u627E\u4E0D\u5230\u5143\u4EF6\uFF1A"+r[2]);if(c.bi!==void 0)n=[[c.bi,1]];else if(c.type==="r")n=[[c.n[0]-1,1/c.val],[c.n[1]-1,-1/c.val]];else throw Error("\u4E0D\u652F\u63F4 i("+r[2]+")\uFF0C\u8ACB\u6539\u7528\u96FB\u963B\u6216\u96FB\u58D3\u6E90\u96FB\u6D41")}return{name:i.toUpperCase(),t:n.filter(([c])=>c>=0)}})}function W(t){let o=t.an||{type:"op"},i=_(t),r=t.N+t.nb,n=(a,m,h=0)=>m.t.reduce((l,[d,f])=>l+f*a[d+h],0);if(o.type==="op"){let a=V(t,{mode:"dc"}),m=[];return t.names.slice(1).forEach((h,l)=>m.push(["V("+h.toUpperCase()+")",a[l],"V"])),t.els.forEach(h=>{h.bi!==void 0&&m.push(["I("+h.name.toUpperCase()+")",a[h.bi],"A"])}),{kind:"op",rows:m}}if(o.type==="dc"){if(!t.els.some(d=>d.name===o.src))throw Error(".dc \u627E\u4E0D\u5230\u4F86\u6E90\uFF1A"+o.src);let a=[],m=i.map(()=>[]),h=Math.round((o.b-o.a)/o.s)+1,l=null;for(let d=0;d<h;d++){let f=o.a+d*o.s;l=V(t,{mode:"dc",sweep:{name:o.src,val:f},x0:l}),a.push(f),i.forEach((M,w)=>m[w].push(n(l,M)))}return{kind:"dc",x:a,xl:"\u6383\u63CF "+o.src.toUpperCase()+" (V)",series:i.map((d,f)=>({name:d.name,y:m[f]}))}}if(o.type==="tran"){let a=o.step,m=o.stop;if(!(a>0)||m/a>5e4)throw Error("\u6642\u9593\u6B65\u9577\u7121\u6548\u6216\u6B65\u6578\u904E\u591A\uFF08\u4E0A\u9650 50000\uFF09");let h=V(t,{mode:"dc"}),l=[0],d=i.map(f=>[n(h,f)]);for(let f=1;f*a<=m+a/2;f++)h=V(t,{mode:"tran",t:f*a,h:a,xp:h,x0:h}),l.push(f*a),i.forEach((M,w)=>d[w].push(n(h,M)));return{kind:"tran",x:l,xl:"\u6642\u9593 (s)",series:i.map((f,M)=>({name:f.name,y:d[M]}))}}let c=V(t,{mode:"dc"}),u=[],e=i.map(a=>({name:a.name,y:[]})),s=i.map(a=>({name:a.name,y:[]})),x=Math.ceil(Math.log10(o.f2/o.f1)*o.n-1e-9);for(let a=0;a<=x;a++){let m=o.f1*10**(a/o.n);u.push(m);let h=V(t,{mode:"ac",w:2*Math.PI*m,xop:c});i.forEach((l,d)=>{let f=n(h,l),M=n(h,l,r);e[d].y.push(20*Math.log10(Math.max(Math.hypot(f,M),1e-30))),s[d].y.push(Math.atan2(M,f)*180/Math.PI)})}return{kind:"ac",x:u,mag:e,ph:s}}var I=`.model dmod d is=1e-14 n=1.05
+`,B=[["\u5206\u58D3\u5668\u8207\u4E26\u806F\u8CA0\u8F09\uFF08.op\uFF09","\u76F4\u6D41\u5DE5\u4F5C\u9EDE\uFF1AR2 \u8207 R3 \u4E26\u806F\u5F8C\u8207 R1 \u5206\u58D3\uFF0C\u8F38\u51FA\u61C9\u70BA 4 V\u3002",`Voltage divider
+V1 in 0 DC 12
+R1 in out 10k
+R2 out 0 10k
+R3 out 0 10k
+.op`],["RC \u5145\u653E\u96FB\uFF08.tran\uFF09","\u6642\u9593\u5E38\u6578 \u03C4 = RC = 1 ms\uFF0C\u8F38\u51FA\u4EE5\u6307\u6578\u66F2\u7DDA\u8FFD\u96A8\u65B9\u6CE2\u3002",`RC step response
+V1 in 0 PULSE(0 5 0 1n 1n 10m 20m)
+R1 in out 1k
+C1 out 0 1u
+.tran 20u 20m
+.plot tran v(in) v(out)`],["\u4E32\u806F RLC \u632F\u9234\uFF08.tran\uFF09","\u6B20\u963B\u5C3C\u4E8C\u968E\u7CFB\u7D71\uFF08Q\u22483.2\uFF09\uFF0C\u5171\u632F\u983B\u7387\u7D04 503 Hz\u3002",`Series RLC ringing
+V1 in 0 PULSE(0 1 0 1n 1n 5m 10m)
+R1 in a 10
+L1 a out 10m
+C1 out 0 10u
+.tran 5u 4m
+.plot tran v(in) v(out)`],["RC \u4F4E\u901A\u6FFE\u6CE2\u5668 Bode \u5716\uFF08.ac\uFF09","\u622A\u6B62\u983B\u7387 1 kHz\uFF0C\u589E\u76CA\u5728\u622A\u6B62\u9EDE\u70BA \u22123 dB\u3001\u76F8\u4F4D \u221245\xB0\u3002",`RC low-pass
+V1 in 0 AC 1
+R1 in out 1k
+C1 out 0 159n
+.ac dec 40 10 1meg
+.plot ac v(out)`],["RLC \u5E36\u901A\u6FFE\u6CE2\u5668\uFF08.ac\uFF09","\u4E2D\u5FC3\u983B\u7387\u7D04 1.59 kHz\uFF0CQ = 2\u3002",`RLC band-pass
+V1 in 0 AC 1
+L1 in a 10m
+C1 a out 1u
+R1 out 0 50
+.ac dec 60 100 100k
+.plot ac v(out)`],["\u4E26\u806F RLC \u8AE7\u632F\uFF08.ac\uFF09","\u4EE5 1 A \u96FB\u6D41\u6E90\u9A45\u52D5\uFF1A\u8AE7\u632F\u6642\u963B\u6297\u7B49\u65BC R = 1 k\u03A9\uFF0860 dB\uFF09\u3002",`Parallel RLC resonance
+I1 0 out AC 1
+R1 out 0 1k
+L1 out 0 10m
+C1 out 0 1u
+.ac dec 60 100 100k
+.plot ac v(out)`],["\u534A\u6CE2\u6574\u6D41\uFF08.tran\uFF09","\u77FD\u4E8C\u6975\u9AD4\uFF08Newton-Raphson \u6C42\u89E3\uFF09\uFF0C\u8F38\u51FA\u88AB\u524A\u53BB\u8CA0\u534A\u9031\u8207\u7D04 0.7 V\u3002",`Half-wave rectifier
+${I}V1 in 0 SIN(0 5 60)
+D1 in out dmod
+R1 out 0 1k
+.tran 100u 50m
+.plot tran v(in) v(out)`],["\u6A4B\u5F0F\u6574\u6D41\u52A0\u6FFE\u6CE2\u96FB\u5BB9\uFF08.tran\uFF09","\u56DB\u500B\u4E8C\u6975\u9AD4\u8207 100 \xB5F \u96FB\u5BB9\uFF0C\u53EF\u89C0\u5BDF\u6F23\u6CE2\u96FB\u58D3\u3002",`Bridge rectifier with filter
+${I}V1 s b SIN(0 10 60)
+R2 s a 5
+D1 a p dmod
+D2 b p dmod
+D3 0 a dmod
+D4 0 b dmod
+C1 p 0 100u
+R1 p 0 1k
+.tran 100u 80m
+.plot tran v(a) v(p)`],["\u4E8C\u6975\u9AD4 I-V \u66F2\u7DDA\uFF08.dc\uFF09","\u6383\u63CF\u96FB\u6E90\u96FB\u58D3\uFF0C\u7D93 10 \u03A9 \u9650\u6D41\u5F8C\u91CF\u6E2C\u4E8C\u6975\u9AD4\u96FB\u6D41\uFF08\u819D\u9EDE\u7D04 0.7 V\uFF09\u3002",`Diode I-V curve
+${I}V1 in 0 0
+R1 in a 10
+D1 a 0 dmod
+.dc V1 0 1.5 0.01
+.plot dc i(r1)`],["\u53CD\u76F8\u653E\u5927\u5668\uFF08.tran\uFF09","\u7406\u60F3\u904B\u7B97\u653E\u5927\u5668\uFF08E \u5143\u4EF6\uFF0C\u589E\u76CA 1e5\uFF09\uFF0C\u9589\u8FF4\u8DEF\u589E\u76CA \u22124.7\u3002",`Inverting amplifier
+V1 in 0 SIN(0 0.5 1k)
+R1 in n 1k
+R2 n out 4.7k
+E1 out 0 0 n 1e5
+.tran 10u 3m
+.plot tran v(in) v(out)`],["\u96D9\u5411\u4E8C\u6975\u9AD4\u524A\u6CE2\u5668\uFF08.tran\uFF09","\u5169\u9846\u53CD\u5411\u4E26\u806F\u4E8C\u6975\u9AD4\u628A\u6CE2\u5F62\u9650\u5236\u5728\u7D04 \xB10.7 V\u3002",`Diode clipper
+${I}V1 in 0 SIN(0 5 1k)
+R1 in out 1k
+D1 out 0 dmod
+D2 0 out dmod
+.tran 5u 3m
+.plot tran v(in) v(out)`],["RC \u5FAE\u5206\u96FB\u8DEF\uFF08.tran\uFF09","\u9AD8\u901A RC \u5728\u65B9\u6CE2\u908A\u7DE3\u7522\u751F\u5C16\u8108\u885D\uFF0C\u03C4 = 0.1 ms\u3002",`RC differentiator
+V1 in 0 PULSE(0 5 0 1n 1n 1m 2m)
+C1 in out 100n
+R1 out 0 1k
+.tran 5u 4m
+.plot tran v(in) v(out)`],["\u60E0\u65AF\u767B\u96FB\u6A4B\uFF08.op\uFF09","\u542B\u6A4B\u63A5\u96FB\u963B\u7684\u4E94\u96FB\u963B\u96FB\u6A4B\uFF0C\u5217\u51FA\u6240\u6709\u7BC0\u9EDE\u96FB\u58D3\u8207\u96FB\u6E90\u96FB\u6D41\u3002",`Wheatstone bridge
+V1 a 0 10
+R1 a b 1k
+R2 a c 2k
+R3 b 0 2k
+R4 c 0 3k
+R5 b c 500
+.op`]];var H=t=>{if(t===0)return"0";let o=Math.abs(t);for(let[i,r]of[[1e9,"G"],[1e6,"M"],[1e3,"k"],[1,""],[.001,"m"],[1e-6,"\xB5"],[1e-9,"n"],[1e-12,"p"]])if(o>=i*.9999)return+(t/i).toPrecision(4)+r;return t.toExponential(2)},j={r:"\u03A9",c:"F",l:"H"},tt={r:"M-28 0 H-20 L-16 -8 L-8 8 L0 -8 L8 8 L16 -8 L20 0 H28",c:"M-28 0 H-4 M-4 -11 V11 M4 -11 V11 M4 0 H28",l:"M-28 0 H-20 A5 5 0 0 1 -10 0 A5 5 0 0 1 0 0 A5 5 0 0 1 10 0 A5 5 0 0 1 20 0 H28",d:"M-28 0 H-8 M-8 -9 L8 0 L-8 9 Z M8 -9 V9 M8 0 H28",v:"M-28 0 H-12 M12 0 H28 M-12 0 A12 12 0 1 0 12 0 A12 12 0 1 0 -12 0",i:"M-28 0 H-12 M12 0 H28 M-12 0 A12 12 0 1 0 12 0 A12 12 0 1 0 -12 0 M-6 0 H6 M2 -4 L6 0 L2 4",e:"M-28 0 H-12 M12 0 H28 M-12 0 L0 -14 L12 0 L0 14 Z"};function et(t){let o=t.name.toUpperCase();if("rcl".includes(t.type))return`${o} ${H(t.val)}${j[t.type]}`;if(t.type==="d")return`${o} ${t.model.toUpperCase()}`;if(t.type==="e")return`${o} \xD7${H(t.val)}`;let i=t.type==="v"?"V":"A",r=t.src;return r.sin?`${o} SIN ${H(r.sin[1])}${i} ${H(r.sin[2])}Hz`:r.pulse?`${o} PULSE ${H(r.pulse[0])}~${H(r.pulse[1])}${i}`:r.ac&&!r.dc?`${o} AC ${H(r.ac)}${i}`:`${o} ${H(r.dc)}${i}`}function X(t){let o=t.els,i=o.some(l=>l.type==="e")?80:62,r=l=>44+l*112,n=l=>58+l*i,c=44+(t.names.length-1)*112+44,u=n(o.length-1)+64,e=t.names.map(()=>[1e9,-1e9]),s=[],x=(l,d)=>{e[l][0]=Math.min(e[l][0],d),e[l][1]=Math.max(e[l][1],d),s.push([r(l),d])},a="",m="";o.forEach((l,d)=>{let f=n(d),[M,w]=l.n,R=r(M),p=r(w),$=R<=p?1:-1,g=(R+p)/2;if(x(M,f),x(w,f),a+=`<path d="M${Math.min(R,p)} ${f}H${g-28}M${g+28} ${f}H${Math.max(R,p)}"/><path transform="translate(${g} ${f}) scale(${$} 1)" d="${tt[l.type]}"/>`,m+=`<text x="${g}" y="${f-20}" text-anchor="middle">${et(l)}</text>`,"ve".includes(l.type)&&(m+=`<text x="${g-$*7}" y="${f+4}" text-anchor="middle" style="font-size:11px">+</text><text x="${g+$*7}" y="${f+4}" text-anchor="middle" style="font-size:11px">\u2212</text>`),l.type==="e"){let[k,v]=[l.n[2],l.n[3]];x(k,f+24),x(v,f+34),a+=`<path stroke-dasharray="4 3" d="M${r(k)} ${f+24}H${g-5}V${f+7}M${r(v)} ${f+34}H${g+5}V${f+7}"/>`}}),e[0][0]<1e9&&(e[0][1]=n(o.length-1)+24),t.names.forEach((l,d)=>{let[f,M]=e[d];f>M||(f=Math.min(f,24),a+=`<path d="M${r(d)} ${f}V${M}"/>`,d?m+=`<text x="${r(d)}" y="14" text-anchor="middle">${l.replace(/[<>&]/g,"")}</text>`:a+=`<path d="M${r(0)} ${M}V${M+8}M${r(0)-12} ${M+8}H${r(0)+12}M${r(0)-8} ${M+13}H${r(0)+8}M${r(0)-4} ${M+18}H${r(0)+4}"/>`)});let h=s.map(([l,d])=>`<circle cx="${l}" cy="${d}" r="3.5"/>`).join("");return`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${c} ${u}" width="${c}" height="${u}" style="max-width:100%;height:auto;color:var(--fg)" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="\u96FB\u8DEF\u5716">${a}<g fill="currentColor" stroke="none">${h}</g>${m}</svg>`}var b=t=>document.getElementById(t),P=["#ffd166","#5eead4","#ff7a90","#a5b4fc","#c4f27a","#f6a6ff"];function q(t,o,i=5){let r=(o-t)/i,n=10**Math.floor(Math.log10(r)),c=r/n,u=(c<1.5?1:c<3.5?2:c<7.5?5:10)*n,e=[];for(let s=Math.ceil(t/u-1e-9)*u;s<=o+u*1e-9;s+=u)e.push(+s.toPrecision(12));return e}function D(t,o,i,r){let n=devicePixelRatio||1,c=t.clientWidth,u=t.clientHeight;t.width=c*n,t.height=u*n;let e=t.getContext("2d");e.setTransform(n,0,0,n,0,0),e.fillStyle="#0d1612",e.fillRect(0,0,c,u);let s=62,x=14,a=26,m=36,h=c-s-x,l=u-a-m,d=r.logx?o.map(Math.log10):o,f=d[0],M=d[d.length-1],w=1/0,R=-1/0;i.forEach(v=>v.y.forEach(y=>{isFinite(y)&&(w=Math.min(w,y),R=Math.max(R,y))})),R-w<1e-12&&(w-=1,R+=1);let p=(R-w)*.06;w-=p,R+=p,M===f&&(M=f+1);let $=v=>s+(v-f)/(M-f)*h,g=v=>a+l-(v-w)/(R-w)*l;e.font="12px ui-monospace,Menlo,Consolas,monospace",e.lineWidth=1,e.strokeStyle="#22382c",e.fillStyle="#8fb9a0",e.textAlign="right",e.textBaseline="middle",q(w,R).forEach(v=>{let y=g(v);e.beginPath(),e.moveTo(s,y),e.lineTo(s+h,y),e.stroke(),e.fillText(H(v),s-6,y)}),e.textAlign="center",e.textBaseline="top",(r.logx?Array.from({length:Math.max(0,Math.floor(M)-Math.ceil(f)+1)},(v,y)=>Math.ceil(f)+y):q(f,M,6)).forEach(v=>{let y=$(v);e.beginPath(),e.moveTo(y,a),e.lineTo(y,a+l),e.stroke(),e.fillText(H(r.logx?10**v:v),y,a+l+6)}),e.strokeRect(s,a,h,l),e.textAlign="left",e.textBaseline="top",e.fillText(r.yl,s,6),e.textAlign="right",e.fillText(r.xl,s+h,a+l+20-6+0),e.save(),e.beginPath(),e.rect(s,a,h,l),e.clip(),e.lineWidth=1.8,e.lineJoin="round",i.forEach((v,y)=>{e.strokeStyle=P[y%P.length],e.beginPath(),v.y.forEach((E,T)=>{let L=$(d[T]),S=g(E);T?e.lineTo(L,S):e.moveTo(L,S)}),e.stroke()}),e.restore(),e.textAlign="left",e.textBaseline="middle",i.forEach((v,y)=>{let E=s+12+y*86;e.fillStyle=P[y%P.length],e.fillRect(E,a+10,12,3),e.fillText(v.name,E+17,a+12+8)})}var A=null;function K(t){let o=b("op"),i=b("c1"),r=b("c2");o.innerHTML="",i.hidden=r.hidden=!0,t.kind==="op"?o.innerHTML="<table>"+t.rows.map(([n,c,u])=>`<tr><th>${n}</th><td>${H(c)}${u}</td></tr>`).join("")+"</table>":t.kind==="ac"?(i.hidden=r.hidden=!1,D(i,t.x,t.mag,{logx:!0,xl:"\u983B\u7387 (Hz)",yl:"\u589E\u76CA (dB)"}),D(r,t.x,t.ph,{logx:!0,xl:"\u983B\u7387 (Hz)",yl:"\u76F8\u4F4D (\xB0)"})):(i.hidden=!1,D(i,t.x,t.series,{xl:t.xl,yl:t.kind==="tran"?"\u96FB\u58D3 / \u96FB\u6D41":"\u8F38\u51FA"}))}function U(){b("err").textContent="";try{let t=F(b("src").value);b("title").textContent=t.title||"\uFF08\u672A\u547D\u540D\u96FB\u8DEF\uFF09",b("sch").innerHTML=X(t),A=W(t),K(A)}catch(t){A=null,b("op").innerHTML="",b("sch").innerHTML="",b("c1").hidden=b("c2").hidden=!0,b("err").textContent="\u932F\u8AA4\uFF1A"+t.message}}function O(){let t=B[b("ex").value];b("desc").textContent=t[1],b("src").value=t[2],U()}B.forEach((t,o)=>b("ex").add(new Option(`${o+1}. ${t[0]}`,o)));b("ex").onchange=O;b("run").onclick=U;b("src").addEventListener("keydown",t=>{(t.ctrlKey||t.metaKey)&&t.key==="Enter"&&U()});addEventListener("resize",()=>A&&K(A));O();})();
+</script>
+</body></html>
