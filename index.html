@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Web SPICE 電路模擬器</title>
+<style>
+:root{--bg:#f3f1ea;--fg:#1d2420;--mut:#5c675f;--card:#fbfaf6;--bd:#cfd3c8;--ac:#1f6f4a;--acfg:#fff;--err:#b3261e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121815;--fg:#dfe8e1;--mut:#92a097;--card:#1a221e;--bd:#2f3b34;--ac:#4fd18b;--acfg:#08150e;--err:#ff8a80}}
+:root[data-theme="dark"]{--bg:#121815;--fg:#dfe8e1;--mut:#92a097;--card:#1a221e;--bd:#2f3b34;--ac:#4fd18b;--acfg:#08150e;--err:#ff8a80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "Noto Sans TC",system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:22px clamp(16px,4vw,40px) 6px}
+h1{margin:0;font:700 28px/1.2 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:-.02em}
+header p{margin:4px 0 0;color:var(--mut)}
+main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;padding:14px clamp(16px,4vw,40px) 32px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+section{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px}
+.row{display:flex;gap:8px}
+select,button,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:6px}
+select{flex:1;min-width:0;padding:8px}
+button{padding:8px 16px;background:var(--ac);color:var(--acfg);border-color:var(--ac);font-weight:700;cursor:pointer}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+#desc{color:var(--mut);margin:10px 0}
+textarea{width:100%;height:340px;padding:10px;font:13px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;resize:vertical;tab-size:2}
+details{margin-top:10px;color:var(--mut);font-size:13px}
+summary{cursor:pointer;color:var(--fg)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace}
+h2{margin:0 0 10px;font-size:17px}
+#err{color:var(--err);font-weight:700;white-space:pre-wrap}
+#sch{overflow-x:auto;border:1px solid var(--bd);border-radius:6px;padding:6px 8px;background:var(--bg)}
+#schnote{margin:6px 0 14px;font-size:12px;color:var(--mut)}
+#sch:empty,#sch:empty+#schnote{display:none}
+svg text{fill:currentColor;stroke:var(--bg);stroke-width:4px;paint-order:stroke;font:12px ui-monospace,Menlo,Consolas,monospace}
+canvas{width:100%;height:300px;display:block;border-radius:6px;margin-bottom:10px}
+canvas[hidden]{display:none}
+table{border-collapse:collapse;font:14px ui-monospace,Menlo,Consolas,monospace}
+th,td{padding:5px 18px 5px 0;text-align:left;border-bottom:1px solid var(--bd)}
+</style></head><body>
+<header><h1>Web SPICE</h1><p>瀏覽器內執行的電路模擬器，網表即輸入，不需伺服器。</p></header>
+<main>
+<section>
+  <div class="row"><select id="ex" aria-label="範例電路"></select><button id="run">執行模擬</button></div>
+  <p id="desc"></p>
+  <textarea id="src" spellcheck="false" aria-label="SPICE 網表"></textarea>
+  <details><summary>語法說明</summary>
+    <p>第一行為標題。元件：<code>R C L</code>（名稱 節點1 節點2 值）、<code>V I</code>（支援 <code>DC</code>、<code>AC</code>、<code>SIN(偏移 振幅 頻率 [延遲])</code>、<code>PULSE(V1 V2 延遲 上升 下降 脈寬 週期)</code>）、<code>D 陽極 陰極 模型</code>、<code>E 輸出+ 輸出- 控制+ 控制- 增益</code>（VCVS）。節點 <code>0</code> 為接地。</p>
+    <p>指令：<code>.model 名稱 D(IS=… N=…)</code>、<code>.op</code>、<code>.dc 來源 起 止 步</code>、<code>.tran 步長 終點</code>、<code>.ac dec 每十倍頻點數 起 止</code>、<code>.plot v(節點) i(元件)</code>。數值後綴：<code>f p n u m k meg g t</code>。Ctrl+Enter 可快速執行。</p>
+  </details>
+</section>
+<section><h2 id="title"></h2><div id="sch"></div><p id="schnote">電路圖：每條垂直線是一個節點（最左為接地），元件橫跨在它所連的兩個節點之間。</p><div id="err" role="alert"></div><div id="op"></div><canvas id="c1" role="img" aria-label="模擬波形"></canvas><canvas id="c2" role="img" aria-label="相位圖" hidden></canvas></section>
+</main>
+<!--APP-->
+</body></html>
