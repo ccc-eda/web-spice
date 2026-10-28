@@ -1,5 +1,7 @@
 # web-spice
 
+線上版 -- https://ccc-eda.github.io/web-spice/dist/index.html
+
 在瀏覽器裡執行的 SPICE 電路模擬器。以 Node.js 工具鏈（esbuild）編譯後，產出**單一 `index.html`**：沒有後端、沒有執行期依賴，用瀏覽器直接開啟，或放到任何靜態主機（GitHub Pages、Netlify、S3…）即可使用。
 
 輸入 SPICE 網表，按下「執行模擬」，就會得到**電路圖**與**波形圖**（或工作點表格）。
